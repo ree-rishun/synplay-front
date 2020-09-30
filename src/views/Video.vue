@@ -1,24 +1,26 @@
 <template>
   <div id="video">
-    <div id="controlArea">
+    <div id="controlArea" @mousemove="onMousemove" :style="'opacity:' + UI.opacity">
 
       <div class="pause" @click="pauseVideo" v-if="video.playing"></div>
       <div class="play" @click="playVideo" v-else></div>
 
       <div id="roomIDArea">
         <label>ROOM URL</label>
-        <input id="roomID" type="text" readonly>
+        <input type="text" v-model="roomURL" readonly>
       </div>
 
       <div id="menu">
         <div id="speaker_icon"></div>
         <input id="volume" type="range" v-model="video.volume" min="0" max="100">
       </div>
-
       <input type="range" id="timeLine" v-model="video.seek" min="0" :max="video.duration" @change="seekVideo" @click="seekClear">
+      <div id="seek_bar">
+        <span :style="'width:' +  video.seek / video.duration * 100 + '%'"></span>
+      </div>
     </div>
     <div id="videoArea">
-      <youtube :video-id="roomData.videoId" ref="youtube" ></youtube>
+      <youtube :video-id="videoId" ref="youtube" @playing="playingVideo" playerVars="'controls': 0"></youtube>
     </div>
   </div>
 </template>
@@ -36,8 +38,9 @@
     export default {
         data() {
             return {
-                videoId: '',
-                pageID: null,
+                domain: 'http://192.168.0.15:8080',
+                videoId: null,
+                roomURL: null,
                 roomData: [],
                 video:{
                     playing: false,
@@ -48,12 +51,18 @@
                 intervalID:{
                     seekID: null,
                     durationID: null,
-                }
-            }
-        },
-        computed:{
-            play(){
-                return this.$refs.youtube.player;
+                },
+                timeoutID:{
+                    UIopacityID: null,
+                },
+                interval:{
+                    pickSeek: 200,    // 100では短過ぎて反応しないことがある
+                    checkDuration: 100,
+                    mousemove: 2000,
+                },
+                UI:{
+                    opacity: 1,
+                },
             }
         },
         methods:{
@@ -62,64 +71,92 @@
                 clearInterval(this.intervalID.durationID);
                 this.intervalID.seekID = setInterval(
                     this.pickSeek,
-                    100);
-                this.intervalID.durationID = setInterval(
+                    this.interval.pickSeek);
+                this.intervalID.durtionID = setInterval(
                     this.checkDuration,
-                    100);
+                    this.interval.pickSeek);
             },
             seekClear(){
                 clearInterval(this.intervalID.seekID);
             },
             pickSeek(){ // 現在のシークを取得
                 const self = this;
-                 this.play.getCurrentTime().then((time) => {
+                 this.player.getCurrentTime().then((time) => {
                      self.video.seek = Math.round(time * 10);
-                     console.log('time : ' + time);
                 });
             },
-            async checkDuration(){  // 動画全体の長さを取得
+            checkDuration(){  // 動画全体の長さを取得
                 const self = this;
                 if(this.video.duration > 10){
                     clearInterval(self.intervalID.durationID);
                 }
-                this.play.getDuration().then((duration) => {
+                this.player.getDuration().then((duration) => {
                     self.video.duration = Math.round(duration * 10);
-                    console.log('duration: ' + self.video.duration);
                 });
             },
             playVideo(){
-                this.play.playVideo();
+                console.log(this.roomData.videoId);
+                this.player.playVideo();
+                this.player.height = 800;
                 this.video.playing = true;
                 this.buildPlayer();
+                const self = this;
+                this.timeoutID.UIopacityID = setTimeout(
+                    function () {
+                      self.UI.opacity = 0;
+                    },
+                    this.interval.mousemove
+                );
             },
             pauseVideo(){
-                this.play.pauseVideo();
+                this.player.pauseVideo();
                 this.video.playing = false;
                 clearInterval(this.intervalID.seekID);
 
             },
+            playingVideo(){
+                console.log('playing!');
+            },
             seekVideo(){
                 clearInterval(this.intervalID.seekID);
                 const self = this;
-                this.play.seekTo(this.video.seek / 10, true).then(() => {
+                this.player.seekTo(this.video.seek / 10, true).then(() => {
                     if(self.video.playing){
                         self.buildPlayer();
                     }
                 });
             },
-        },
-        watch(){
-
+            onMousemove(){
+                clearTimeout(this.timeoutID.UIopacityID);
+                this.UI.opacity = 1;
+                const self = this;
+                if(this.video.playing){
+                    this.timeoutID.UIopacityID = setTimeout(
+                        function () {
+                            self.UI.opacity = 0;
+                        },
+                        this.interval.mousemove
+                    );
+                }
+            },
         },
         mounted() {
-            this.pageID = this.$route.params['id'];
+            this.roomID = this.$route.params['id'];
+            this.roomURL = this.domain + this.$route.path;
 
+            // Firebaseと値を同期
             firebase
                 .database()
-                .ref("rooms/" + this.pageID)
+                .ref("rooms/" + this.roomID)
                 .on("value", snapshot => {
                     this.roomData = snapshot.val();
+                    this.videoId = this.roomData.videoId;
                 });
+        },
+        computed:{
+            player(){
+                return this.$refs.youtube.player;
+            }
         },
     }
 </script>
@@ -199,20 +236,35 @@
     top: 3vh;
     left: 3vw;
     background: rgba(50,50,50,.6);
-    font-size: 1.5em;
+    height: 30px;
+    line-height: 30px;
     color: #fff;
     padding-left: 1.5vw;
     border-left: solid 2px $main-acc-color;
+    width: auto;
     //
     input[type='text']{
       text-align: center;
       background: rgba(255,255,255,.7);
+      border: none;
+      outline: none;
+      font-size: 18px;
+      line-height: 30px;
+      height: 30px;
+      vertical-align: top;
+      padding: 0;
+      width: 300px;
     }
     //
     label{
+      font-size: 18px;
       margin-right: 0.5vw;
+      height: 30px;
+      line-height: 30px;
+      vertical-align: top;
     }
   }
+
 
 
   /* --- 画質選択UI --- */
@@ -227,22 +279,19 @@
     color: #fff;
     bottom: 100px;
     right: 2vw;
-  }
-
-  #qualityList li{
-    display: block;
-    width: auto;
-    border-bottom: #fff 1px;
-    line-height: 1.5em;
-    padding: 0 5px;
-    line-height: 1.5em;
-    font-size: 0.7em;
-    cursor: pointer;
-  }
-
-  #qualityList li:hover{
-    color: $main-acc-color;
-    background: #777777;
+    li{
+      display: block;
+      width: auto;
+      border-bottom: #fff 1px;
+      line-height: 1.5em;
+      padding: 0 5px;
+      font-size: 0.7em;
+      cursor: pointer;
+      &:hover{
+        color: $main-acc-color;
+        background: #777777;
+      }
+    }
   }
 
 
@@ -250,10 +299,10 @@
   /* --- タイムライン操作UI --- */
   #timeLine[type="range"] {
     position: fixed;
-    z-index: 102;
+    z-index: 103;
     -webkit-appearance: none;
     appearance: none;
-    background-color: rgba(250,250,250,.5);
+    background-color: rgba(250,250,250,0);
     height: 5px;
     width: 100%;
     border-radius: 6px;
@@ -280,10 +329,25 @@
   }
 
   #timeLine[type="range"]:active::-webkit-slider-thumb {
-    box-shadow: 0 0 0 4px rgba(255, 29, 71, .6);
+    //box-shadow: 0 0 0 4px rgba(255, 29, 71, .6);
     transition: .4s;
   }
-
+  #seek_bar{
+    position: fixed;
+    z-index: 102;
+    left: 0;
+    bottom: 42px;
+    height: 5px;
+    width: 100%;
+    background-color: rgba(250,250,250,.5);
+    span{
+      display: block;
+      background: $main-acc-color;
+      height: 5px;
+      width: 0;
+      padding-right: 5px;
+    }
+  }
 
 
   /* --- 音量 --- */
@@ -295,7 +359,7 @@
     height: 44px;
     left: 0;
     bottom: 0;
-    background: rgba(50,50,50,.8);
+    background: rgba(50,50,50,1);
   }
 
   #volume[type='range']{

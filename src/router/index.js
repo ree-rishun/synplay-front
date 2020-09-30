@@ -30,6 +30,11 @@ const routes = [
     path: '/video/:id',
     name: 'video_page',
     component: () => import('../views/Video.vue')
+  },
+  {
+    path: '/test',
+    name: 'test_page',
+    component: () => import('../views/test.vue')
   }
 ];
 
